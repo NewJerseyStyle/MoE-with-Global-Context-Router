@@ -210,12 +210,14 @@ def train_router(
     output_path.mkdir(parents=True, exist_ok=True)
 
     # Freeze expert MLPs, only train router components
+    # Convert trainable params to float32 for gradient scaling compatibility
     trainable_params = []
     frozen_params = []
 
     for name, param in model.named_parameters():
         if any(x in name for x in ['context_encoder', 'local_router', 'global_router', 'gate']):
             param.requires_grad = True
+            param.data = param.data.float()  # Convert to float32
             trainable_params.append(param)
         else:
             param.requires_grad = False
