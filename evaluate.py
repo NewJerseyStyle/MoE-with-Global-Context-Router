@@ -27,12 +27,22 @@ def load_model(model_path: str, use_flash_attn: bool = False) -> Tuple:
     """Load model and tokenizer with optimal settings."""
     print(f"Loading model: {model_path}")
 
+    # Convert to absolute path if it's a local directory
+    model_path_obj = Path(model_path)
+    if model_path_obj.exists():
+        model_path = str(model_path_obj.resolve())
+        print(f"  Resolved local path: {model_path}")
+
     kwargs = {
         "device_map": "auto",
         "torch_dtype": torch.float16,
         "trust_remote_code": True,
         "attn_implementation": "eager",  # Explicitly disable flash attention
     }
+
+    # Check if local path exists
+    if Path(model_path).exists():
+        kwargs["local_files_only"] = True
 
     # Try flash attention if requested and GPU supports it (Ampere+)
     if use_flash_attn:
@@ -48,7 +58,7 @@ def load_model(model_path: str, use_flash_attn: bool = False) -> Tuple:
             print(f"Flash Attention check failed: {e}")
 
     model = AutoModelForCausalLM.from_pretrained(model_path, **kwargs)
-    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True, local_files_only=Path(model_path).exists())
 
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
