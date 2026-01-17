@@ -199,6 +199,13 @@ class ModelLevelMoE:
 
     def compute_input_embedding(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
         """Get hidden states from base model for routing."""
+        # Get the device of the model's embedding layer
+        model_device = next(self.models["base"].parameters()).device
+
+        # Move inputs to the model's device
+        input_ids = input_ids.to(model_device)
+        attention_mask = attention_mask.to(model_device)
+
         with torch.no_grad():
             outputs = self.models["base"](
                 input_ids=input_ids,
@@ -220,6 +227,10 @@ class ModelLevelMoE:
         """
         hidden_states = self.compute_input_embedding(input_ids, attention_mask)
 
+        # Move attention_mask to same device as hidden_states
+        if attention_mask is not None and attention_mask.device != hidden_states.device:
+            attention_mask = attention_mask.to(hidden_states.device)
+
         if self.router_type == "similarity":
             indices, weights = self.router.route(hidden_states, attention_mask, top_k=top_k)
         else:
@@ -240,6 +251,14 @@ class ModelLevelMoE:
     ) -> torch.Tensor:
         """Generate using a single expert."""
         self.load_expert(domain)
+
+        # Get the device of the model
+        model_device = next(self.models[domain].parameters()).device
+
+        # Move inputs to the model's device
+        input_ids = input_ids.to(model_device)
+        if attention_mask is not None:
+            attention_mask = attention_mask.to(model_device)
 
         with torch.no_grad():
             outputs = self.models[domain].generate(
@@ -327,12 +346,12 @@ class ModelLevelMoE:
 
             for text in samples[:50]:  # Limit samples
                 inputs = self.tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
-                inputs = {k: v.to(self.device) for k, v in inputs.items()}
+                # Don't move to device here - compute_input_embedding will handle it
 
                 hidden = self.compute_input_embedding(inputs["input_ids"], inputs["attention_mask"])
 
-                # Mean pool
-                mask = inputs["attention_mask"].unsqueeze(-1).float()
+                # Move attention_mask to same device as hidden
+                mask = inputs["attention_mask"].to(hidden.device).unsqueeze(-1).float()
                 pooled = (hidden * mask).sum(dim=1) / mask.sum(dim=1)
                 embeddings.append(pooled.cpu())
 
