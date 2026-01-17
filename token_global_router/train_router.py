@@ -273,6 +273,12 @@ def train_router(
 
             # Forward pass
             # We need to capture router logits for load balancing loss
+            # Move inputs to model device first
+            model_device = next(model.model.parameters()).device
+            input_ids = input_ids.to(model_device)
+            attention_mask = attention_mask.to(model_device)
+            labels = labels.to(model_device)
+
             model._compute_context(input_ids, attention_mask)
 
             # Inject context into MoE layers
@@ -285,7 +291,21 @@ def train_router(
 
                 def forward_with_logging(hs, m=moe, logits_list=all_router_logits):
                     batch_size, seq_len, hidden_dim = hs.shape
-                    context_expanded = m._injected_context.unsqueeze(1).expand(-1, seq_len, -1)
+                    device = hs.device
+
+                    # Move routers to correct device if needed
+                    if m.local_router.weight.device != device:
+                        m.local_router = m.local_router.to(device)
+                        m.global_router = m.global_router.to(device)
+                        if hasattr(m, 'gate') and m.gate is not None:
+                            m.gate = m.gate.to(device)
+
+                    # Move context to correct device
+                    context = m._injected_context
+                    if context.device != device:
+                        context = context.to(device)
+
+                    context_expanded = context.unsqueeze(1).expand(-1, seq_len, -1)
 
                     local_logits = m.local_router(hs)
                     global_logits = m.global_router(context_expanded)
@@ -306,6 +326,10 @@ def train_router(
 
                     expert_outputs = []
                     for expert in m.experts:
+                        # Move expert to correct device if needed
+                        expert_device = next(expert.parameters()).device
+                        if expert_device != device:
+                            expert = expert.to(device)
                         expert_outputs.append(expert(hs))
                     expert_outputs = torch.stack(expert_outputs, dim=2)
 
@@ -327,10 +351,15 @@ def train_router(
             lm_loss = outputs.loss
 
             # Load balancing loss
-            lb_loss = torch.tensor(0.0, device=model.device)
+            # Initialize on same device as lm_loss to avoid device mismatch
+            lb_loss = torch.tensor(0.0, device=lm_loss.device)
             if all_router_logits and load_balance_weight > 0:
                 for router_logits in all_router_logits:
-                    lb_loss = lb_loss + compute_load_balancing_loss(router_logits, attention_mask)
+                    # Move attention_mask to router_logits device for computation
+                    mask_for_lb = attention_mask.to(router_logits.device)
+                    lb_component = compute_load_balancing_loss(router_logits, mask_for_lb)
+                    # Move result to same device as lb_loss
+                    lb_loss = lb_loss + lb_component.to(lb_loss.device)
                 lb_loss = lb_loss / len(all_router_logits)
 
             # Total loss
