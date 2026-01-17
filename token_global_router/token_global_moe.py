@@ -49,8 +49,8 @@ class GlobalContextEncoder(nn.Module):
             # Attention-weighted pooling
             attn_scores = self.attention(hidden_states).squeeze(-1)  # (batch, seq)
             if attention_mask is not None:
-                # Use large negative value instead of -inf for numerical stability
-                attn_scores = attn_scores.masked_fill(~attention_mask.bool(), -1e9)
+                # Use float16-safe large negative value (max float16 is ~65504)
+                attn_scores = attn_scores.masked_fill(~attention_mask.bool(), -65000.0)
             attn_weights = F.softmax(attn_scores, dim=-1)
             # Handle case where all positions are masked (shouldn't happen but safety)
             attn_weights = torch.nan_to_num(attn_weights, nan=1.0 / hidden_states.size(1))
