@@ -99,6 +99,18 @@ class ContextAwareMoELayer(nn.Module):
             global_context: (batch, context_dim)
         """
         batch_size, seq_len, hidden_dim = hidden_states.shape
+        device = hidden_states.device
+
+        # Move routers to the same device as hidden_states if needed
+        if self.local_router.weight.device != device:
+            self.local_router = self.local_router.to(device)
+            self.global_router = self.global_router.to(device)
+            if hasattr(self, 'gate') and self.gate is not None:
+                self.gate = self.gate.to(device)
+
+        # Move context to the same device
+        if global_context.device != device:
+            global_context = global_context.to(device)
 
         # Expand context to all positions
         context_expanded = global_context.unsqueeze(1).expand(-1, seq_len, -1)
@@ -119,10 +131,13 @@ class ContextAwareMoELayer(nn.Module):
         top_probs, top_indices = torch.topk(router_probs, self.top_k, dim=-1)
         top_probs = top_probs / top_probs.sum(dim=-1, keepdim=True)  # Renormalize
 
-        # Compute expert outputs
-        # For small number of experts, compute all and select
+        # Compute expert outputs - move experts to correct device if needed
         expert_outputs = []
         for expert in self.experts:
+            # Check if expert is on correct device
+            expert_device = next(expert.parameters()).device
+            if expert_device != device:
+                expert = expert.to(device)
             expert_outputs.append(expert(hidden_states))
         expert_outputs = torch.stack(expert_outputs, dim=2)  # (batch, seq, num_experts, hidden)
 
@@ -201,6 +216,12 @@ class TokenGlobalMoE(nn.Module):
         """Compute global context from input embeddings."""
         with torch.no_grad():
             embeddings = self.model.model.embed_tokens(input_ids)
+
+        # Move context encoder to same device as embeddings if needed
+        embed_device = embeddings.device
+        if next(self.context_encoder.parameters()).device != embed_device:
+            self.context_encoder = self.context_encoder.to(embed_device)
+
         self._global_context = self.context_encoder(embeddings.detach(), attention_mask)
 
     def forward(
