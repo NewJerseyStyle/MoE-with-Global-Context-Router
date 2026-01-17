@@ -17,6 +17,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
+from torch.cuda.amp import autocast, GradScaler
 from transformers import AutoTokenizer, get_linear_schedule_with_warmup
 from datasets import load_dataset, concatenate_datasets
 from tqdm import tqdm
@@ -251,11 +252,16 @@ def train_router(
     total_lm_loss = 0
     total_lb_loss = 0
 
+    # Mixed precision training
+    scaler = GradScaler()
+    use_amp = torch.cuda.is_available()
+
     print(f"\nStarting training...")
     print(f"  Epochs: {num_epochs}")
     print(f"  Batch size: {batch_size}")
     print(f"  Gradient accumulation: {gradient_accumulation_steps}")
     print(f"  Total steps: {total_steps}")
+    print(f"  Mixed precision: {use_amp}")
 
     for epoch in range(num_epochs):
         epoch_loss = 0
@@ -317,12 +323,14 @@ def train_router(
                     else:
                         router_logits = local_logits + global_logits
 
+                    # Clamp logits for numerical stability
+                    router_logits = router_logits.clamp(-50, 50)
                     logits_list.append(router_logits)
 
                     # Continue with normal forward
                     router_probs = F.softmax(router_logits, dim=-1)
                     top_probs, top_indices = torch.topk(router_probs, m.top_k, dim=-1)
-                    top_probs = top_probs / top_probs.sum(dim=-1, keepdim=True)
+                    top_probs = top_probs / (top_probs.sum(dim=-1, keepdim=True) + 1e-9)
 
                     expert_outputs = []
                     for expert in m.experts:
@@ -341,32 +349,40 @@ def train_router(
 
                 moe.forward = forward_with_logging
 
-            # Run model forward
-            outputs = model.model(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                labels=labels,
-            )
+            # Run model forward with mixed precision
+            with autocast(enabled=use_amp):
+                outputs = model.model(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    labels=labels,
+                )
 
-            lm_loss = outputs.loss
+                lm_loss = outputs.loss
 
-            # Load balancing loss
-            # Initialize on same device as lm_loss to avoid device mismatch
-            lb_loss = torch.tensor(0.0, device=lm_loss.device)
-            if all_router_logits and load_balance_weight > 0:
-                for router_logits in all_router_logits:
-                    # Move attention_mask to router_logits device for computation
-                    mask_for_lb = attention_mask.to(router_logits.device)
-                    lb_component = compute_load_balancing_loss(router_logits, mask_for_lb)
-                    # Move result to same device as lb_loss
-                    lb_loss = lb_loss + lb_component.to(lb_loss.device)
-                lb_loss = lb_loss / len(all_router_logits)
+                # Load balancing loss
+                lb_loss = torch.tensor(0.0, device=lm_loss.device, dtype=torch.float32)
+                if all_router_logits and load_balance_weight > 0:
+                    for router_logits in all_router_logits:
+                        # Move attention_mask to router_logits device for computation
+                        mask_for_lb = attention_mask.to(router_logits.device)
+                        lb_component = compute_load_balancing_loss(router_logits.float(), mask_for_lb)
+                        # Move result to same device as lb_loss
+                        lb_loss = lb_loss + lb_component.to(lb_loss.device)
+                    lb_loss = lb_loss / len(all_router_logits)
 
-            # Total loss
-            loss = lm_loss + load_balance_weight * lb_loss
-            loss = loss / gradient_accumulation_steps
+                # Total loss
+                loss = lm_loss.float() + load_balance_weight * lb_loss
+                loss = loss / gradient_accumulation_steps
 
-            loss.backward()
+            # Check for NaN
+            if torch.isnan(loss) or torch.isinf(loss):
+                print(f"  Warning: NaN/Inf loss at step {step}, skipping batch")
+                optimizer.zero_grad()
+                all_router_logits.clear()
+                continue
+
+            # Backward with gradient scaling
+            scaler.scale(loss).backward()
 
             total_loss += loss.item() * gradient_accumulation_steps
             total_lm_loss += lm_loss.item()
@@ -376,8 +392,13 @@ def train_router(
 
             # Gradient accumulation
             if (step + 1) % gradient_accumulation_steps == 0:
+                # Unscale gradients and clip
+                scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(trainable_params, max_norm=1.0)
-                optimizer.step()
+
+                # Step with scaler
+                scaler.step(optimizer)
+                scaler.update()
                 scheduler.step()
                 optimizer.zero_grad()
                 global_step += 1
@@ -407,7 +428,7 @@ def train_router(
             all_router_logits.clear()
 
         # End of epoch
-        avg_epoch_loss = epoch_loss / epoch_steps
+        avg_epoch_loss = epoch_loss / max(epoch_steps, 1)
         print(f"Epoch {epoch+1} completed. Average loss: {avg_epoch_loss:.4f}")
 
         # Save epoch checkpoint

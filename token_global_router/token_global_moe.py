@@ -49,8 +49,12 @@ class GlobalContextEncoder(nn.Module):
             # Attention-weighted pooling
             attn_scores = self.attention(hidden_states).squeeze(-1)  # (batch, seq)
             if attention_mask is not None:
-                attn_scores = attn_scores.masked_fill(~attention_mask.bool(), float('-inf'))
-            attn_weights = F.softmax(attn_scores, dim=-1).unsqueeze(-1)
+                # Use large negative value instead of -inf for numerical stability
+                attn_scores = attn_scores.masked_fill(~attention_mask.bool(), -1e9)
+            attn_weights = F.softmax(attn_scores, dim=-1)
+            # Handle case where all positions are masked (shouldn't happen but safety)
+            attn_weights = torch.nan_to_num(attn_weights, nan=1.0 / hidden_states.size(1))
+            attn_weights = attn_weights.unsqueeze(-1)
             pooled = (hidden_states * attn_weights).sum(dim=1)
         else:  # thor - simple mean
             if attention_mask is not None:
@@ -126,10 +130,13 @@ class ContextAwareMoELayer(nn.Module):
         else:  # add
             router_logits = local_logits + global_logits
 
+        # Clamp logits for numerical stability
+        router_logits = router_logits.clamp(-50, 50)
+
         # Top-k routing
         router_probs = F.softmax(router_logits, dim=-1)
         top_probs, top_indices = torch.topk(router_probs, self.top_k, dim=-1)
-        top_probs = top_probs / top_probs.sum(dim=-1, keepdim=True)  # Renormalize
+        top_probs = top_probs / (top_probs.sum(dim=-1, keepdim=True) + 1e-9)  # Renormalize
 
         # Compute expert outputs - move experts to correct device if needed
         expert_outputs = []
