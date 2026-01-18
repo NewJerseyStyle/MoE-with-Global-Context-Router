@@ -22,6 +22,9 @@ echo ""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Create results directory
+mkdir -p "$SCRIPT_DIR/results"
+
 NUM_SAMPLES=100
 TRAIN_SAMPLES=500
 TRAIN_EPOCHS=3
@@ -32,17 +35,28 @@ TRAIN_EPOCHS=3
 echo "[1/5] LINEAR BASELINE"
 echo "========================================"
 
-cd linear_baseline
+MERGED_MODEL_PATH="$SCRIPT_DIR/linear_baseline/merged_linear"
 
-if [ ! -f "merged_linear/config.json" ]; then
+if [ ! -f "$MERGED_MODEL_PATH/config.json" ]; then
     echo "Merging models with mergekit..."
-    mergekit-yaml merge_config.yaml ./merged_linear --cuda --low-cpu-memory
+    cd "$SCRIPT_DIR/linear_baseline"
+    mergekit-yaml merge_config.yaml "$MERGED_MODEL_PATH" --cuda --low-cpu-memory
+    cd "$SCRIPT_DIR"
+
+    # Verify merge succeeded
+    if [ ! -f "$MERGED_MODEL_PATH/config.json" ]; then
+        echo "ERROR: Merge failed! Skipping linear baseline evaluation."
+        MERGED_MODEL_PATH=""
+    fi
 else
     echo "Merged model exists, skipping merge."
 fi
 
-cd ..
-python evaluate.py --model_path ./linear_baseline/merged_linear --method_name linear --num_samples $NUM_SAMPLES
+if [ -n "$MERGED_MODEL_PATH" ] && [ -f "$MERGED_MODEL_PATH/config.json" ]; then
+    python evaluate.py --model_path "$MERGED_MODEL_PATH" --method_name linear --num_samples $NUM_SAMPLES
+else
+    echo "Skipping linear baseline evaluation (no merged model)"
+fi
 
 # ========================================
 # Method 2: Model-Level Router (MoDEM-style)
@@ -51,13 +65,13 @@ echo ""
 echo "[2/5] MODEL-LEVEL ROUTER (MoDEM)"
 echo "========================================"
 
-cd model_router
+cd "$SCRIPT_DIR/model_router"
 python evaluate_model_router.py \
     --compute_centroids \
     --num_samples $NUM_SAMPLES \
-    --output_dir ../results
+    --output_dir "$SCRIPT_DIR/results"
 
-cd ..
+cd "$SCRIPT_DIR"
 
 # ========================================
 # Method 3: Token + Global Context (Untrained)
@@ -66,15 +80,15 @@ echo ""
 echo "[3/5] TOKEN + GLOBAL CONTEXT (Untrained)"
 echo "========================================"
 
-cd token_global_router
+cd "$SCRIPT_DIR/token_global_router"
 
 python evaluate_token_global.py \
     --context_method momentum \
     --fusion_method gate \
     --num_samples $NUM_SAMPLES \
-    --output_dir ../results
+    --output_dir "$SCRIPT_DIR/results"
 
-cd ..
+cd "$SCRIPT_DIR"
 
 # ========================================
 # Method 4: Train Token + Global Router
@@ -83,9 +97,11 @@ echo ""
 echo "[4/5] TRAINING TOKEN + GLOBAL ROUTER"
 echo "========================================"
 
-cd token_global_router
+TRAINED_ROUTER_PATH="$SCRIPT_DIR/token_global_router/trained_router"
 
-if [ ! -f "trained_router/final/config.json" ]; then
+cd "$SCRIPT_DIR/token_global_router"
+
+if [ ! -f "$TRAINED_ROUTER_PATH/final/config.json" ]; then
     echo "Training router..."
     python train_router.py \
         --num_epochs $TRAIN_EPOCHS \
@@ -97,12 +113,12 @@ if [ ! -f "trained_router/final/config.json" ]; then
         --context_method momentum \
         --fusion_method gate \
         --load_balance_weight 0.01 \
-        --output_dir ./trained_router
+        --output_dir "$TRAINED_ROUTER_PATH"
 else
     echo "Trained router exists, skipping training."
 fi
 
-cd ..
+cd "$SCRIPT_DIR"
 
 # ========================================
 # Method 5: Token + Global Context (Trained)
@@ -111,16 +127,20 @@ echo ""
 echo "[5/5] TOKEN + GLOBAL CONTEXT (Trained)"
 echo "========================================"
 
-cd token_global_router
+cd "$SCRIPT_DIR/token_global_router"
 
-python evaluate_token_global.py \
-    --context_method momentum \
-    --fusion_method gate \
-    --checkpoint_path ./trained_router/final \
-    --num_samples $NUM_SAMPLES \
-    --output_dir ../results
+if [ -f "$TRAINED_ROUTER_PATH/final/config.json" ]; then
+    python evaluate_token_global.py \
+        --context_method momentum \
+        --fusion_method gate \
+        --checkpoint_path "$TRAINED_ROUTER_PATH/final" \
+        --num_samples $NUM_SAMPLES \
+        --output_dir "$SCRIPT_DIR/results"
+else
+    echo "Skipping trained evaluation (training may have failed)"
+fi
 
-cd ..
+cd "$SCRIPT_DIR"
 
 # ========================================
 # Final Comparison
@@ -130,7 +150,8 @@ echo "========================================"
 echo "FINAL COMPARISON"
 echo "========================================"
 
-python evaluate.py --compare --output_dir ./results
+cd "$SCRIPT_DIR"
+python evaluate.py --compare --output_dir "$SCRIPT_DIR/results"
 
 echo ""
 echo "========================================"
