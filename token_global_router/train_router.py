@@ -300,6 +300,7 @@ def train_router(
                 def forward_with_logging(hs, m=moe, logits_list=all_router_logits):
                     batch_size, seq_len, hidden_dim = hs.shape
                     device = hs.device
+                    original_dtype = hs.dtype
 
                     # Move routers to correct device if needed
                     if m.local_router.weight.device != device:
@@ -313,13 +314,18 @@ def train_router(
                     if context.device != device:
                         context = context.to(device)
 
-                    context_expanded = context.unsqueeze(1).expand(-1, seq_len, -1)
+                    # Convert to router dtype for routing computation
+                    router_dtype = m.local_router.weight.dtype
+                    hs_for_routing = hs.to(router_dtype)
+                    context_for_routing = context.to(router_dtype)
 
-                    local_logits = m.local_router(hs)
+                    context_expanded = context_for_routing.unsqueeze(1).expand(-1, seq_len, -1)
+
+                    local_logits = m.local_router(hs_for_routing)
                     global_logits = m.global_router(context_expanded)
 
                     if m.fusion == "gate":
-                        combined = torch.cat([hs, context_expanded], dim=-1)
+                        combined = torch.cat([hs_for_routing, context_expanded], dim=-1)
                         alpha = torch.sigmoid(m.gate(combined))
                         router_logits = alpha * local_logits + (1 - alpha) * global_logits
                     else:
@@ -334,6 +340,7 @@ def train_router(
                     top_probs, top_indices = torch.topk(router_probs, m.top_k, dim=-1)
                     top_probs = top_probs / (top_probs.sum(dim=-1, keepdim=True) + 1e-9)
 
+                    # Expert outputs in original dtype
                     expert_outputs = []
                     for expert in m.experts:
                         # Move expert to correct device if needed
@@ -343,9 +350,11 @@ def train_router(
                         expert_outputs.append(expert(hs))
                     expert_outputs = torch.stack(expert_outputs, dim=2)
 
+                    # Match probs dtype to expert outputs
                     top_indices_expanded = top_indices.unsqueeze(-1).expand(-1, -1, -1, hidden_dim)
                     selected_outputs = torch.gather(expert_outputs, dim=2, index=top_indices_expanded)
-                    output = (selected_outputs * top_probs.unsqueeze(-1)).sum(dim=2)
+                    top_probs_matched = top_probs.to(selected_outputs.dtype)
+                    output = (selected_outputs * top_probs_matched.unsqueeze(-1)).sum(dim=2)
 
                     return output
 

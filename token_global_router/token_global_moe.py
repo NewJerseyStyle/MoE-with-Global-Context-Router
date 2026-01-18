@@ -45,6 +45,10 @@ class GlobalContextEncoder(nn.Module):
 
     def forward(self, hidden_states: torch.Tensor, attention_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
         # hidden_states: (batch, seq, hidden)
+        # Convert to same dtype as layer weights
+        input_dtype = hidden_states.dtype
+        hidden_states = hidden_states.to(self.attention.weight.dtype)
+
         if self.method == "momentum":
             # Attention-weighted pooling
             attn_scores = self.attention(hidden_states).squeeze(-1)  # (batch, seq)
@@ -104,6 +108,7 @@ class ContextAwareMoELayer(nn.Module):
         """
         batch_size, seq_len, hidden_dim = hidden_states.shape
         device = hidden_states.device
+        original_dtype = hidden_states.dtype
 
         # Move routers to the same device as hidden_states if needed
         if self.local_router.weight.device != device:
@@ -116,15 +121,20 @@ class ContextAwareMoELayer(nn.Module):
         if global_context.device != device:
             global_context = global_context.to(device)
 
+        # Convert to router dtype for routing computation
+        router_dtype = self.local_router.weight.dtype
+        hidden_for_routing = hidden_states.to(router_dtype)
+        context_for_routing = global_context.to(router_dtype)
+
         # Expand context to all positions
-        context_expanded = global_context.unsqueeze(1).expand(-1, seq_len, -1)
+        context_expanded = context_for_routing.unsqueeze(1).expand(-1, seq_len, -1)
 
         # Compute router logits
-        local_logits = self.local_router(hidden_states)  # (batch, seq, num_experts)
+        local_logits = self.local_router(hidden_for_routing)  # (batch, seq, num_experts)
         global_logits = self.global_router(context_expanded)
 
         if self.fusion == "gate":
-            combined = torch.cat([hidden_states, context_expanded], dim=-1)
+            combined = torch.cat([hidden_for_routing, context_expanded], dim=-1)
             alpha = torch.sigmoid(self.gate(combined))
             router_logits = alpha * local_logits + (1 - alpha) * global_logits
         else:  # add
@@ -139,6 +149,7 @@ class ContextAwareMoELayer(nn.Module):
         top_probs = top_probs / (top_probs.sum(dim=-1, keepdim=True) + 1e-9)  # Renormalize
 
         # Compute expert outputs - move experts to correct device if needed
+        # Experts operate in original dtype (float16)
         expert_outputs = []
         for expert in self.experts:
             # Check if expert is on correct device
@@ -148,10 +159,11 @@ class ContextAwareMoELayer(nn.Module):
             expert_outputs.append(expert(hidden_states))
         expert_outputs = torch.stack(expert_outputs, dim=2)  # (batch, seq, num_experts, hidden)
 
-        # Gather and weight
+        # Gather and weight - convert probs to expert dtype for multiplication
         top_indices_expanded = top_indices.unsqueeze(-1).expand(-1, -1, -1, hidden_dim)
         selected_outputs = torch.gather(expert_outputs, dim=2, index=top_indices_expanded)
-        output = (selected_outputs * top_probs.unsqueeze(-1)).sum(dim=2)
+        top_probs_matched = top_probs.to(selected_outputs.dtype)
+        output = (selected_outputs * top_probs_matched.unsqueeze(-1)).sum(dim=2)
 
         return output
 
