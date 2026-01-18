@@ -95,8 +95,11 @@ class EmbeddingSimilarityRouter:
 
         input_emb = self.compute_domain_embedding(hidden_states, attention_mask)
 
+        # Move domain embeddings to same device as input
+        domain_emb = self.domain_embeddings.to(input_emb.device)
+
         # Cosine similarity
-        similarities = torch.matmul(input_emb, self.domain_embeddings.T)  # (batch, num_domains)
+        similarities = torch.matmul(input_emb, domain_emb.T)  # (batch, num_domains)
 
         # Top-k selection
         weights, indices = torch.topk(similarities, k=min(top_k, len(self.domain_names)), dim=-1)
