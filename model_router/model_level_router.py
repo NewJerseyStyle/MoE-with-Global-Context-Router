@@ -263,11 +263,14 @@ class ModelLevelMoE:
         if attention_mask is not None:
             attention_mask = attention_mask.to(model_device)
 
+        # Set pad_token_id if not provided
+        if 'pad_token_id' not in generate_kwargs:
+            generate_kwargs['pad_token_id'] = self.tokenizer.pad_token_id
+
         with torch.no_grad():
             outputs = self.models[domain].generate(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
-                pad_token_id=self.tokenizer.pad_token_id,
                 **generate_kwargs
             )
         return outputs
