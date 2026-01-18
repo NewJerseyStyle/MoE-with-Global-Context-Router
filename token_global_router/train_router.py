@@ -211,11 +211,21 @@ def train_router(
 
     # Freeze expert MLPs, only train router components
     # Convert trainable params to float32 for gradient scaling compatibility
+    # Note: 'gate' must use specific pattern to avoid matching Qwen3's 'gate_proj'
     trainable_params = []
     frozen_params = []
 
+    trainable_patterns = ['context_encoder', 'local_router', 'global_router']
+
     for name, param in model.named_parameters():
-        if any(x in name for x in ['context_encoder', 'local_router', 'global_router', 'gate']):
+        # Check if this is a trainable router component
+        # Use specific matching: 'gate' only if followed by '.' or end (not 'gate_proj')
+        is_trainable = any(p in name for p in trainable_patterns)
+        # Match '.gate.' or name ending with '.gate' but not 'gate_proj'
+        if '.gate.' in name or name.endswith('.gate.weight') or name.endswith('.gate.bias'):
+            is_trainable = True
+
+        if is_trainable:
             param.requires_grad = True
             param.data = param.data.float()  # Convert to float32
             trainable_params.append(param)
