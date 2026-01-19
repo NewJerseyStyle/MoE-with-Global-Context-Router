@@ -25,14 +25,13 @@ import gc
 # Expert model paths
 EXPERT_MODELS = {
     "base": "Qwen/Qwen3-0.6B",
-    "medical": "FreedomIntelligence/Medbase-Qwen-2.5-0.5B",
-    "code": "Qwen/Qwen2.5-Coder-0.5B",
-    "math": "Qwen/Qwen2.5-Math-1.5B",
-    "instruct": "Qwen/Qwen3-0.6B",
+    "medical": "suayptalha/Qwen3-0.6B-Medical-Expert",
+    "code": "suayptalha/Qwen3-0.6B-Code-Expert",
+    "math": "suayptalha/Qwen3-0.6B-Math-Expert",
+    "instruct": "suayptalha/Qwen3-0.6B-IF-Expert",
 }
-
 # Default embedding model
-DEFAULT_EMBEDDING_MODEL = "Alibaba-NLP/gte-Qwen2-1.5B-instruct"
+DEFAULT_EMBEDDING_MODEL = "Qwen/Qwen3-Embedding-0.6B"
 
 
 class ExpertEmbeddingRouter(nn.Module):
