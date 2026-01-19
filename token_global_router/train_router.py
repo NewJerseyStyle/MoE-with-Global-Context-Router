@@ -275,6 +275,25 @@ def train_router(
     print(f"  Total steps: {total_steps}")
     print(f"  Mixed precision: {use_amp}")
 
+    # Pre-move all MoE components to correct devices ONCE before training
+    # This avoids slow .to() calls on every forward pass
+    model_device = next(model.model.parameters()).device
+    print(f"  Model device: {model_device}")
+
+    for layer_idx, moe in model.moe_layers.items():
+        # Move routers to model device
+        moe.local_router = moe.local_router.to(model_device)
+        moe.global_router = moe.global_router.to(model_device)
+        if hasattr(moe, 'gate') and moe.gate is not None:
+            moe.gate = moe.gate.to(model_device)
+        # Move experts to model device
+        for i, expert in enumerate(moe.experts):
+            moe.experts[i] = expert.to(model_device)
+
+    # Move context encoder to model device
+    model.context_encoder = model.context_encoder.to(model_device)
+    print("  Pre-moved all MoE components to model device")
+
     for epoch in range(num_epochs):
         epoch_loss = 0
         epoch_steps = 0
@@ -309,20 +328,9 @@ def train_router(
 
                 def forward_with_logging(hs, m=moe, logits_list=all_router_logits):
                     batch_size, seq_len, hidden_dim = hs.shape
-                    device = hs.device
-                    original_dtype = hs.dtype
 
-                    # Move routers to correct device if needed
-                    if m.local_router.weight.device != device:
-                        m.local_router = m.local_router.to(device)
-                        m.global_router = m.global_router.to(device)
-                        if hasattr(m, 'gate') and m.gate is not None:
-                            m.gate = m.gate.to(device)
-
-                    # Move context to correct device
+                    # Get context (already on correct device from pre-move)
                     context = m._injected_context
-                    if context.device != device:
-                        context = context.to(device)
 
                     # Convert to router dtype for routing computation
                     router_dtype = m.local_router.weight.dtype
@@ -350,15 +358,8 @@ def train_router(
                     top_probs, top_indices = torch.topk(router_probs, m.top_k, dim=-1)
                     top_probs = top_probs / (top_probs.sum(dim=-1, keepdim=True) + 1e-9)
 
-                    # Expert outputs in original dtype
-                    expert_outputs = []
-                    for expert in m.experts:
-                        # Move expert to correct device if needed
-                        expert_device = next(expert.parameters()).device
-                        if expert_device != device:
-                            expert = expert.to(device)
-                        expert_outputs.append(expert(hs))
-                    expert_outputs = torch.stack(expert_outputs, dim=2)
+                    # Expert outputs (experts already on correct device from pre-move)
+                    expert_outputs = torch.stack([expert(hs) for expert in m.experts], dim=2)
 
                     # Match probs dtype to expert outputs
                     top_indices_expanded = top_indices.unsqueeze(-1).expand(-1, -1, -1, hidden_dim)
