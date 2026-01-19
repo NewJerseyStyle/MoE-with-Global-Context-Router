@@ -382,7 +382,7 @@ def build_token_global_moe(
             model = AutoModelForCausalLM.from_pretrained(
                 path,
                 torch_dtype=torch.float16,
-                device_map="cuda",
+                device_map="cpu",
                 trust_remote_code=True,
                 attn_implementation="eager",
             )
