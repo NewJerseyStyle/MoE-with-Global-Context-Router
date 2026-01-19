@@ -401,7 +401,7 @@ def build_token_global_moe(
     if torch.cuda.is_available():
         target_device = torch.device("cuda:0")
         # Ensure base model is on CUDA
-        if next(base_model.parameters()).device.type == "cuda":
+        if next(base_model.parameters()).device.type == "cpu":
             print("Moving base model to CUDA...")
             base_model = base_model.to(target_device)
     else:
