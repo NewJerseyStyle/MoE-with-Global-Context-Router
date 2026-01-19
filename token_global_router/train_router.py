@@ -277,7 +277,15 @@ def train_router(
 
     # Pre-move all MoE components to correct devices ONCE before training
     # This avoids slow .to() calls on every forward pass
-    model_device = next(model.model.parameters()).device
+    # Explicitly use CUDA if available
+    if torch.cuda.is_available():
+        model_device = torch.device("cuda:0")
+        # Also move the base model to CUDA if it's on CPU
+        if next(model.model.parameters()).device.type == "cpu":
+            print("  Moving base model to CUDA...")
+            model.model = model.model.to(model_device)
+    else:
+        model_device = next(model.model.parameters()).device
     print(f"  Model device: {model_device}")
 
     for layer_idx, moe in model.moe_layers.items():

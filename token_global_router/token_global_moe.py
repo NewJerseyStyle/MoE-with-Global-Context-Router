@@ -340,13 +340,23 @@ def build_token_global_moe(
     base_path = expert_models.get("base", list(expert_models.values())[0])
     print(f"\nLoading base model: {base_path}")
 
-    base_model = AutoModelForCausalLM.from_pretrained(
-        base_path,
-        torch_dtype=torch.float16,
-        device_map="auto",
-        trust_remote_code=True,
-        attn_implementation="eager",
-    )
+    # Use explicit CUDA device if available, otherwise auto
+    if torch.cuda.is_available():
+        base_model = AutoModelForCausalLM.from_pretrained(
+            base_path,
+            torch_dtype=torch.float16,
+            device_map={"": "cuda:0"},
+            trust_remote_code=True,
+            attn_implementation="eager",
+        )
+    else:
+        base_model = AutoModelForCausalLM.from_pretrained(
+            base_path,
+            torch_dtype=torch.float16,
+            device_map="auto",
+            trust_remote_code=True,
+            attn_implementation="eager",
+        )
 
     tokenizer = AutoTokenizer.from_pretrained(base_path, trust_remote_code=True)
     if tokenizer.pad_token is None:
@@ -387,8 +397,16 @@ def build_token_global_moe(
             gc.collect()
             torch.cuda.empty_cache()
 
-    # Get target device from base model
-    target_device = next(base_model.parameters()).device
+    # Get target device - prefer CUDA if available
+    if torch.cuda.is_available():
+        target_device = torch.device("cuda:0")
+        # Ensure base model is on CUDA
+        if next(base_model.parameters()).device.type == "cpu":
+            print("Moving base model to CUDA...")
+            base_model = base_model.to(target_device)
+    else:
+        target_device = next(base_model.parameters()).device
+    print(f"Target device: {target_device}")
 
     # Convert to ModuleLists and move to correct device/dtype
     expert_mlps_modules = {}
