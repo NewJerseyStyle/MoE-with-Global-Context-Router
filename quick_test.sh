@@ -6,7 +6,7 @@ echo ""
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
 # Test with base model first (no download needed if cached)
-python evaluate.py --model_path Qwen/Qwen3-0.6B --method_name test_base --num_samples 10 --benchmarks gsm8k mmlu
+python evaluate.py --model_path Qwen/Qwen3-1.7B --method_name test_base --num_samples 10 --benchmarks gsm8k mmlu
 
 echo ""
 echo "Quick test complete!"

@@ -20,11 +20,9 @@ import json
 
 # Expert model definitions
 EXPERT_MODELS = {
-    "base": "Qwen/Qwen3-0.6B",
-    "medical": "suayptalha/Qwen3-0.6B-Medical-Expert",
-    "code": "suayptalha/Qwen3-0.6B-Code-Expert",
-    "math": "suayptalha/Qwen3-0.6B-Math-Expert",
-    "instruct": "suayptalha/Qwen3-0.6B-IF-Expert",
+    "base": "Qwen/Qwen3-1.7B",
+    "medical": "prithivMLmods/Sculptor-Qwen3_Med-Reasoning",
+    "instruct": "gustavecortal/Qwen3-psychological-reasoning-1.7B",
 }
 
 
@@ -151,7 +149,7 @@ class ModelLevelMoE:
                 bnb_4bit_compute_dtype=torch.float16,
             )
 
-        base_path = self.expert_models.get("base", "Qwen/Qwen3-0.6B")
+        base_path = self.expert_models.get("base", "Qwen/Qwen3-1.7B")
         self.models["base"] = AutoModelForCausalLM.from_pretrained(base_path, **kwargs)
         self.tokenizer = AutoTokenizer.from_pretrained(base_path, trust_remote_code=True)
 
@@ -394,20 +392,6 @@ def create_default_domain_samples() -> Dict[str, List[str]]:
             "What medication should I take for fever?",
             "Explain the difference between bacteria and viruses.",
             "What is hypertension and how is it managed?",
-        ],
-        "code": [
-            "Write a Python function to sort a list.",
-            "How do I create a REST API in Flask?",
-            "Explain recursion with an example.",
-            "Debug this JavaScript code.",
-            "What is the difference between a list and a tuple?",
-        ],
-        "math": [
-            "Solve for x: 2x + 5 = 15",
-            "What is the derivative of x^2?",
-            "Calculate the area of a circle with radius 5.",
-            "If a train travels at 60 mph for 2 hours, how far does it go?",
-            "What is the probability of rolling a 6 on a dice?",
         ],
         "instruct": [
             "Summarize this article for me.",

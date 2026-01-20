@@ -22,11 +22,9 @@ import gc
 
 
 EXPERT_MODELS = {
-    "base": "Qwen/Qwen3-0.6B",
-    "medical": "suayptalha/Qwen3-0.6B-Medical-Expert",
-    "code": "suayptalha/Qwen3-0.6B-Code-Expert",
-    "math": "suayptalha/Qwen3-0.6B-Math-Expert",
-    "instruct": "suayptalha/Qwen3-0.6B-IF-Expert",
+    "base": "Qwen/Qwen3-1.7B",
+    "medical": "prithivMLmods/Sculptor-Qwen3_Med-Reasoning",
+    "instruct": "gustavecortal/Qwen3-psychological-reasoning-1.7B",
 }
 
 
@@ -457,8 +455,8 @@ if __name__ == "__main__":
 
     # Build model with fewer experts for testing
     test_experts = {
-        "base": "Qwen/Qwen3-0.6B",
-        "math": "suayptalha/Qwen3-0.6B-Math-Expert",
+        "base": "Qwen/Qwen3-1.7B",
+        "instruct": "gustavecortal/Qwen3-psychological-reasoning-1.7B",
     }
 
     model, tokenizer = build_token_global_moe(

@@ -24,11 +24,9 @@ import gc
 
 # Expert model paths
 EXPERT_MODELS = {
-    "base": "Qwen/Qwen3-0.6B",
-    "medical": "suayptalha/Qwen3-0.6B-Medical-Expert",
-    "code": "suayptalha/Qwen3-0.6B-Code-Expert",
-    "math": "suayptalha/Qwen3-0.6B-Math-Expert",
-    "instruct": "suayptalha/Qwen3-0.6B-IF-Expert",
+    "base": "Qwen/Qwen3-1.7B",
+    "medical": "prithivMLmods/Sculptor-Qwen3_Med-Reasoning",
+    "instruct": "gustavecortal/Qwen3-psychological-reasoning-1.7B",
 }
 # Default embedding model
 DEFAULT_EMBEDDING_MODEL = "Qwen/Qwen3-Embedding-0.6B"
@@ -382,26 +380,6 @@ def create_domain_samples() -> Dict[str, List[str]]:
             "What are common side effects of chemotherapy?",
             "How does the immune system fight infections?",
             "What is the treatment for acute myocardial infarction?",
-        ],
-        "code": [
-            "Write a Python function to sort a list.",
-            "How do I implement a binary search tree?",
-            "Explain the difference between async and sync programming.",
-            "What is the time complexity of quicksort?",
-            "How do I connect to a PostgreSQL database in Python?",
-            "Write a recursive function to calculate factorial.",
-            "Explain the concept of dependency injection.",
-            "What is the difference between REST and GraphQL?",
-        ],
-        "math": [
-            "Solve the equation: 2x + 5 = 13",
-            "What is the derivative of x^2 + 3x?",
-            "Calculate the integral of sin(x).",
-            "Prove that the square root of 2 is irrational.",
-            "What is the formula for the area of a circle?",
-            "Explain the Pythagorean theorem.",
-            "Solve: If a train travels at 60 mph, how far in 2.5 hours?",
-            "What is the sum of the first 100 natural numbers?",
         ],
         "instruct": [
             "Summarize the main points of this article.",

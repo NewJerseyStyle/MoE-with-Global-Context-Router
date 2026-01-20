@@ -3,7 +3,7 @@
 # Prerequisites: pip install mergekit
 
 echo "========================================"
-echo "Linear Merge: Qwen3-0.6B Experts"
+echo "Linear Merge: Qwen3-1.7B Experts"
 echo "========================================"
 
 OUTPUT_DIR="./merged_linear"

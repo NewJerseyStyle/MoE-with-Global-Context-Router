@@ -5,7 +5,7 @@ Evaluates models on multiple benchmarks and saves results for comparison.
 
 Usage:
     python evaluate.py --model_path ./linear_baseline/merged_linear --method_name linear
-    python evaluate.py --model_path Qwen/Qwen3-0.6B --method_name base --num_samples 50
+    python evaluate.py --model_path Qwen/Qwen3-1.7B --method_name base --num_samples 50
 """
 
 import torch
