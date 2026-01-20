@@ -7,13 +7,12 @@ This experiment compared different Mixture-of-Experts (MoE) routing strategies f
 ---
 
 ## Experiment Setup
-
 ### Expert Models
-- **Base**: Qwen3-0.6B
-- **Medical**: Medbase-Qwen-2.5-0.5B
-- **Code**: Qwen2.5-Coder-0.5B
-- **Math**: Qwen2.5-Math-1.5B
-- **Instruct**: Qwen3-0.6B
+- **Base**: Qwen/Qwen3-0.6B
+- **Medical**: suayptalha/Qwen3-0.6B-Medical-Expert
+- **Code**: suayptalha/Qwen3-0.6B-Code-Expert
+- **Math**: suayptalha/Qwen3-0.6B-Math-Expert
+- **Instruct**: suayptalha/Qwen3-0.6B-IF-Expert
 
 ### Methods Compared
 
@@ -58,7 +57,7 @@ This experiment compared different Mixture-of-Experts (MoE) routing strategies f
 
 The fundamental problem: **the expert models themselves may not be specialized enough**.
 
-- Math expert (Qwen2.5-Math-1.5B) still only achieves ~15% on GSM8K via MoDEM
+- Math still only achieves ~15% on GSM8K via MoDEM
 - This suggests the "experts" don't have strong domain-specific capabilities to route TO
 - Merging may actually preserve more general capability than routing to weak specialists
 
@@ -92,7 +91,7 @@ HumanEval near-saturation (0.96-0.98) suggests:
 
 ---
 
-## What We Learned (Negative Results)
+## What We Learned (Negative Results) so far
 
 ### ❌ Token-Level Routing Doesn't Beat Model-Level
 
