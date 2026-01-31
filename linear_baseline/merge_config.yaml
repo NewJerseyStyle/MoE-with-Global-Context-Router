@@ -1,0 +1,33 @@
+# Linear Merge Configuration for Qwen3-0.6B Experts
+# This creates a baseline merged model using simple linear interpolation
+#
+# Usage: mergekit-yaml merge_config.yaml ./merged_linear --cuda
+
+merge_method: linear
+dtype: float16
+
+slices:
+  - sources:
+      - model: Qwen/Qwen3-0.6B
+        layer_range: [0, 28]
+        parameters:
+          weight: 0.2
+      - model: suayptalha/Qwen3-0.6B-Medical-Expert
+        layer_range: [0, 28]
+        parameters:
+          weight: 0.2
+      - model: suayptalha/Qwen3-0.6B-Code-Expert
+        layer_range: [0, 28]
+        parameters:
+          weight: 0.2
+      - model: suayptalha/Qwen3-0.6B-Math-Expert
+        layer_range: [0, 28]
+        parameters:
+          weight: 0.2
+      - model: suayptalha/Qwen3-0.6B-IF-Expert
+        layer_range: [0, 28]
+        parameters:
+          weight: 0.2
+
+# Tokenizer from base model
+tokenizer_source: Qwen/Qwen3-0.6B
